@@ -89,6 +89,7 @@ class GranularModel : protected Pointers {
 
   double radi, radj, meff, dt, Ti, Tj, contact_radius;
   double Fntot, magtortwist;
+  double Fdamp, Ft, Ftangelas_prev, Ftangdamp, Ftangelas, tang_disp;
 
   double *xi, *xj, *vi, *vj, *omegai, *omegaj;
   double fs[3], fr[3], ft[3];

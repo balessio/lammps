@@ -66,6 +66,7 @@ namespace Granular_NS {
   class GranSubModDampingMassVelocity : public GranSubModDamping {
    public:
     GranSubModDampingMassVelocity(class GranularModel *, class LAMMPS *);
+    double calculate_heat() override;
     double calculate_forces() override;
   };
 
@@ -74,6 +75,7 @@ namespace Granular_NS {
   class GranSubModDampingViscoelastic : public GranSubModDamping {
    public:
     GranSubModDampingViscoelastic(class GranularModel *, class LAMMPS *);
+    double calculate_heat() override;
     double calculate_forces() override;
   };
 
@@ -83,6 +85,7 @@ namespace Granular_NS {
    public:
     GranSubModDampingTsuji(class GranularModel *, class LAMMPS *);
     void init() override;
+    double calculate_heat() override;
     double calculate_forces() override;
   };
 

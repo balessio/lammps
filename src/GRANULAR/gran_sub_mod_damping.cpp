@@ -102,7 +102,10 @@ double GranSubModDampingVelocity::calculate_forces()
 
 double GranSubModDampingVelocity::calculate_heat()
 {
-  double dq = 1.0; // placeholder
+  double Fdamphold = gm->Fdamp; 
+  if (gm->limit_damping and gm->Fntot == 0.0)
+    Fdamphold = gm->Fnormal;
+  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
 
   dq *= gm->heat_norm_damp;
   if (gm->calculate_svector) gm->svector[index_svector] = dq;
@@ -126,6 +129,20 @@ double GranSubModDampingMassVelocity::calculate_forces()
   return -damp_prefactor * gm->vnnr;
 }
 
+/* ---------------------------------------------------------------------- */
+
+double GranSubModDampingMassVelocity::calculate_heat()
+{
+  double Fdamphold = gm->Fdamp; 
+  if (gm->limit_damping and gm->Fntot == 0.0)
+    Fdamphold = gm->Fnormal;
+  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
+
+  dq *= gm->heat_norm_damp;
+  if (gm->calculate_svector) gm->svector[index_svector] = dq;
+  return dq;
+}
+
 /* ----------------------------------------------------------------------
    Default, viscoelastic damping
 ------------------------------------------------------------------------- */
@@ -142,6 +159,20 @@ double GranSubModDampingViscoelastic::calculate_forces()
 {
   damp_prefactor = damp * gm->meff * gm->contact_radius;
   return -damp_prefactor * gm->vnnr;
+}
+
+/* ---------------------------------------------------------------------- */
+
+double GranSubModDampingViscoelastic::calculate_heat()
+{
+  double Fdamphold = gm->Fdamp; 
+  if (gm->limit_damping and gm->Fntot == 0.0)
+    Fdamphold = gm->Fnormal;
+  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
+
+  dq *= gm->heat_norm_damp;
+  if (gm->calculate_svector) gm->svector[index_svector] = dq;
+  return dq;
 }
 
 /* ----------------------------------------------------------------------
@@ -182,6 +213,20 @@ double GranSubModDampingTsuji::calculate_forces()
     sqrt1 = 0.0;
   damp_prefactor = damp * sqrt(sqrt1);
   return -damp_prefactor * gm->vnnr;
+}
+
+/* ---------------------------------------------------------------------- */
+
+double GranSubModDampingTsuji::calculate_heat()
+{
+  double Fdamphold = gm->Fdamp; 
+  if (gm->limit_damping and gm->Fntot == 0.0)
+    Fdamphold = gm->Fnormal;
+  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
+
+  dq *= gm->heat_norm_damp;
+  if (gm->calculate_svector) gm->svector[index_svector] = dq;
+  return dq;
 }
 
 /* ----------------------------------------------------------------------

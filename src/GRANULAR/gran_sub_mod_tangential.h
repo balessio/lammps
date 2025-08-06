@@ -75,6 +75,7 @@ namespace Granular_NS {
    public:
     GranSubModTangentialLinearHistory(class GranularModel *, class LAMMPS *);
     void coeffs_to_local() override;
+    double calculate_heat() override;
     void calculate_forces() override;
 
    protected:
@@ -86,6 +87,7 @@ namespace Granular_NS {
   class GranSubModTangentialLinearHistoryClassic : public GranSubModTangentialLinearHistory {
    public:
     GranSubModTangentialLinearHistoryClassic(class GranularModel *, class LAMMPS *);
+    double calculate_heat() override;
     void calculate_forces() override;
   };
 
@@ -103,6 +105,7 @@ namespace Granular_NS {
     GranSubModTangentialMindlin(class GranularModel *, class LAMMPS *);
     void coeffs_to_local() override;
     void mix_coeffs(double *, double *) override;
+    double calculate_heat() override;
     void calculate_forces() override;
 
    protected:

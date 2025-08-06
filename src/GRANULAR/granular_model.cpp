@@ -343,6 +343,7 @@ void GranularModel::init()
   magtortwist = 0.0;
   dq_conduct = 0.0;
   dq_dissipate = 0.0;
+  Ftangelas_prev = 0.0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -487,7 +488,7 @@ void GranularModel::calculate_forces()
   vrel = len3(vtr);
 
   // calculate forces/torques
-  double Fdamp, dist_to_contact;
+  double dist_to_contact;
   if (contact_radius_flag)
     contact_radius = normal_model->calculate_contact_radius();
   Fnormal = normal_model->calculate_forces();
@@ -498,6 +499,9 @@ void GranularModel::calculate_forces()
 
   normal_model->set_fncrit(); // Needed for tangential, rolling, twisting
 
+  tangential_model->calculate_forces();
+  Ft = len3(fs);
+
   if (heat_defined) {
     dq_conduct = heat_model->calculate_heat();
   }
@@ -507,8 +511,8 @@ void GranularModel::calculate_forces()
     dq_dissipate += tangential_model->calculate_heat();
   }
 
+  Ftangelas_prev = Ftangelas;
 
-  tangential_model->calculate_forces();
 
   // sum normal + tangential contributions
 
