@@ -343,7 +343,6 @@ void GranularModel::init()
   magtortwist = 0.0;
   dq_conduct = 0.0;
   dq_dissipate = 0.0;
-  Ftangelas_prev = 0.0;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -510,9 +509,6 @@ void GranularModel::calculate_forces()
     dq_dissipate = damping_model->calculate_heat();
     dq_dissipate += tangential_model->calculate_heat();
   }
-
-  Ftangelas_prev = Ftangelas;
-
 
   // sum normal + tangential contributions
 

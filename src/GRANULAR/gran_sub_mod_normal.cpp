@@ -159,7 +159,9 @@ void GranSubModNormalHooke::coeffs_to_local()
 
 double GranSubModNormalHooke::calculate_forces()
 {
-  return k * gm->delta;
+  double Fn_hold = k * gm->delta;
+  gm->StrainEnergyNorm = 0.5 * pow(Fn_hold, 2) / k;
+  return Fn_hold;
 }
 
 /* ----------------------------------------------------------------------
@@ -187,7 +189,9 @@ void GranSubModNormalHertz::coeffs_to_local()
 
 double GranSubModNormalHertz::calculate_forces()
 {
-  return k * gm->contact_radius * gm->delta;
+  double Fn_hold = k * gm->contact_radius * gm->delta;
+  gm->StrainEnergyNorm = 0.5 * pow(Fn_hold, 2) / k / gm->contact_radius;
+  return Fn_hold;
 }
 
 /* ----------------------------------------------------------------------
@@ -290,6 +294,7 @@ double GranSubModNormalDMT::calculate_forces()
   Fne = k * gm->contact_radius * gm->delta;
   F_pulloff = 4.0 * MY_PI * cohesion * gm->Reff;
   Fne -= F_pulloff;
+  gm->StrainEnergyNorm = 0.5 * pow(Fne, 2) / k;
   return Fne;
 }
 
@@ -418,6 +423,7 @@ double GranSubModNormalJKR::calculate_forces()
   Fne = k * gm->contact_radius * a2 / gm->Reff -
       MY_2PI * a2 * sqrt(4.0 * cohesion * Emix / (MY_PI * gm->contact_radius));
   F_pulloff = 3.0 * MY_PI * cohesion * gm->Reff;
+  gm->StrainEnergyNorm = 0.5 * pow(Fne, 2) / k;
 
   return Fne;
 }

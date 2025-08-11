@@ -86,10 +86,14 @@ class GranularModel : protected Pointers {
   // Contact properties/output
   double Fnormal, forces[3], torquesi[3], torquesj[3];
   double dq_conduct, dq_dissipate;
+  double dr_nd, dr_td, dr_f;
 
   double radi, radj, meff, dt, Ti, Tj, contact_radius;
   double Fntot, magtortwist;
-  double Fdamp, Ft, Ftangelas_prev, Ftangdamp, Ftangelas, tang_disp;
+  double Fdamp, Ft, Ftangdamp;
+  bool fric_on;
+  double Ftangelasvec[3], Ftangelas_prevvec[3];
+  double StrainEnergyNorm, StrainEnergyTang;
 
   double *xi, *xj, *vi, *vj, *omegai, *omegaj;
   double fs[3], fr[3], ft[3];

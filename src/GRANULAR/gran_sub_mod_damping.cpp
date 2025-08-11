@@ -60,6 +60,8 @@ double GranSubModDamping::calculate_heat()
   if (gm->heat_norm_damp != 0)
     error->one(FLERR, "Granular damping model {} does not calculate a dissipative heat term", name);
 
+  gm->dr_nd = 0.0;
+
   if (gm->calculate_svector) gm->svector[index_svector] = 0.0;
   return 0.0;
 }
@@ -105,7 +107,9 @@ double GranSubModDampingVelocity::calculate_heat()
   double Fdamphold = gm->Fdamp; 
   if (gm->limit_damping and gm->Fntot == 0.0)
     Fdamphold = gm->Fnormal;
-  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
+  
+  gm->dr_nd = fabs(Fdamphold * gm->vnnr);
+  double dq = gm->dr_nd * gm->dt;
 
   dq *= gm->heat_norm_damp;
   if (gm->calculate_svector) gm->svector[index_svector] = dq;
@@ -136,7 +140,9 @@ double GranSubModDampingMassVelocity::calculate_heat()
   double Fdamphold = gm->Fdamp; 
   if (gm->limit_damping and gm->Fntot == 0.0)
     Fdamphold = gm->Fnormal;
-  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
+
+  gm->dr_nd = fabs(Fdamphold * gm->vnnr);
+  double dq = gm->dr_nd * gm->dt;
 
   dq *= gm->heat_norm_damp;
   if (gm->calculate_svector) gm->svector[index_svector] = dq;
@@ -165,10 +171,12 @@ double GranSubModDampingViscoelastic::calculate_forces()
 
 double GranSubModDampingViscoelastic::calculate_heat()
 {
-  double Fdamphold = gm->Fdamp; 
+  double Fdamphold = gm->Fdamp;
   if (gm->limit_damping and gm->Fntot == 0.0)
     Fdamphold = gm->Fnormal;
-  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
+
+  gm->dr_nd = fabs(Fdamphold * gm->vnnr);
+  double dq = gm->dr_nd * gm->dt;
 
   dq *= gm->heat_norm_damp;
   if (gm->calculate_svector) gm->svector[index_svector] = dq;
@@ -222,7 +230,9 @@ double GranSubModDampingTsuji::calculate_heat()
   double Fdamphold = gm->Fdamp; 
   if (gm->limit_damping and gm->Fntot == 0.0)
     Fdamphold = gm->Fnormal;
-  double dq = fabs(gm->Fdamp * gm->vnnr) * gm->dt;
+
+  gm->dr_nd = fabs(Fdamphold * gm->vnnr);
+  double dq = gm->dr_nd * gm->dt;
 
   dq *= gm->heat_norm_damp;
   if (gm->calculate_svector) gm->svector[index_svector] = dq;
