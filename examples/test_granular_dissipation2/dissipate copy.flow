@@ -7,7 +7,7 @@ variable Lx equal v_grainDiameter*4.01
 variable Ly equal v_grainDiameter*4.01
 variable Lz equal v_grainDiameter*4.01
 variable writeFrequency equal 600000
-variable timeStep equal 1e-9
+variable timeStep equal 1e-8
 timestep ${timeStep}
 
 comm_modify mode single vel yes
@@ -22,13 +22,13 @@ region regWhole block 0 ${Lx} 0 ${Ly} 0 ${Lz} units box
 create_box 4 regWhole
 variable eps equal v_grainDiameter/100
 region regionForGrains block ${eps} ${Lx} ${eps} ${Ly} ${eps} ${Lz} units box
-variable lattice_size equal v_grainDiameter*0.999#1.0001
+variable lattice_size equal v_grainDiameter*1.0001
 lattice sc ${lattice_size}
 create_atoms 1 region regionForGrains
 set group all diameter ${grainDiameter} density ${grainDensity}
 
 pair_style granular
-#pair_coeff * * hooke 1e5 1e-1 tangential linear_nohistory 1.0 0.15 damping velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
+#pair_coeff * * hooke 1e6 1e0 tangential linear_nohistory 1.0 0.15 damping velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
 #pair_coeff * * hooke 1e5 1e-2 tangential linear_nohistory 0.1 0.2 damping mass_velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
 pair_coeff * * hooke 1e6 1e-2 tangential linear_history 0.29e6 1.0 0.15 damping velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
 #pair_coeff * * hertz/material 1e8 0.75 0.3 tangential mindlin_rescale/force NULL 0.1 0.15 damping tsuji dissipative_heat 1.0 1.0 1.0 heat area 0.1
@@ -41,6 +41,7 @@ compute RotKinEng_atom all erotate/sphere/atom
 compute RotKinEng all reduce sum c_RotKinEng_atom
 compute pairs all pair/local p13 p14 p15
 compute pairIDs all property/local patom1 patom2
+dump dum_contacts all local ${writeFrequency} dumpfiles/contacts_* c_pairIDs[1] c_pairIDs[2] c_pairs[1] c_pairs[2] c_pairs[3]
 compute AccumDiss all reduce sum c_pairs[*] inputs local
 thermo_style custom step atoms time c_KinEng c_RotKinEng c_PotEng c_AccumDiss[1] c_AccumDiss[2] c_AccumDiss[3]
 thermo ${writeFrequency}
@@ -51,11 +52,10 @@ compute meanT all reduce sum c_storeT
 compute PotEngAtom all pe/atom
 variable init_temp equal PI*v_grainDensity*v_grainDiameter^3/6*0.01^2/1.38e-23 # m*v_rms^2/3/k_B
 velocity all create ${init_temp} 10007
-fix integ all nve/sphere
-run ${writeFrequency}
-variable avewindow equal 100
+variable avewindow equal 1000
 fix 1 all ave/time 1 ${avewindow} ${avewindow} c_KinEng c_RotKinEng c_PotEng c_AccumDiss[1] c_AccumDiss[2] c_AccumDiss[3] c_meanT file energy.dat
-dump dum_contacts all local ${writeFrequency} dumpfiles/contacts_* c_pairIDs[1] c_pairIDs[2] c_pairs[1] c_pairs[2] c_pairs[3]
+fix integ all nve/sphere
+run 0
 dump dum_all all custom ${writeFrequency} dumpfiles/all_* id radius x y z vx vy vz omegax omegay omegaz c_storeT c_PotEngAtom
 info variables out overwrite info
 variable runUntil equal floor(v_writeFrequency*50)
