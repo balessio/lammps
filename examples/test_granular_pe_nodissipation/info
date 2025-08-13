@@ -1,0 +1,21 @@
+
+Info-Info-Info-Info-Info-Info-Info-Info-Info-Info-Info
+Printed on Mon Aug 11 11:48:34 2025
+
+Variable information:
+Variable[  0]: grainDiameter,    style = equal,            def = 0.005 0.005
+Variable[  1]: grainDensity,     style = equal,            def = 1000 1000
+Variable[  2]: random_seed,      style = equal,            def = 10007 (undefined)
+Variable[  3]: Lx,               style = equal,            def = v_grainDiameter*4.01 0.02005
+Variable[  4]: Ly,               style = equal,            def = v_grainDiameter*4.01 0.02005
+Variable[  5]: Lz,               style = equal,            def = v_grainDiameter*4.01 0.02005
+Variable[  6]: writeFrequency,   style = equal,            def = 600000 600000
+Variable[  7]: timeStep,         style = equal,            def = 1e-9 1e-09
+Variable[  8]: sizefrac,         style = equal,            def = v_grainDiameter/2 0.0025
+Variable[  9]: eps,              style = equal,            def = v_grainDiameter/100 5e-05
+Variable[ 10]: lattice_size,     style = equal,            def = v_grainDiameter*0.999 0.004995
+Variable[ 11]: init_temp,        style = equal,            def = PI*v_grainDensity*v_grainDiameter^3/6*0.01^2/1.38e-23 474274253259329
+Variable[ 12]: avewindow,        style = equal,            def = 100 100
+
+Info-Info-Info-Info-Info-Info-Info-Info-Info-Info-Info
+

@@ -56,9 +56,6 @@ double GranSubModTangential::calculate_heat()
     gm->svector[index_svector + 1] = 0.0;
   }
 
-  gm->dr_f = 0.0;
-  gm->dr_td = 0.0;
-
   return 0.0;
 }
 
@@ -123,15 +120,13 @@ double GranSubModTangentialLinearNoHistory::calculate_heat()
   double Fscrit = mu * gm->normal_model->get_fncrit();
 
   if (Fscrit <= gm->Ft) {
-    gm->dr_td = 0.0;
+    dq_damp = 0.0;
     dq_friction = gm->Ft * gm->vrel * gm->dt;
   }
   else {
-    gm->dr_td = gm->Ft * gm->vrel;
+    dq_damp = gm->Ft * gm->vrel * gm->dt;
     dq_friction = 0.0;
   }
-  dq_damp = gm->dr_td * gm->dt;
-  gm->dr_f = dq_friction / gm->dt;
 
   dq_damp *= gm->heat_tang_damp;
   dq_friction *= gm->heat_tang_fric;
@@ -176,12 +171,14 @@ void GranSubModTangentialLinearHistory::calculate_forces()
   double magfs, magfs_inv, rsht, shrmag, temp_array[3], vtr2[3];
   int frame_update = 0;
 
+  double Ftangdamp, Ftangelasvec[3], Ftangelas_prevvec[3], StrEngPrev;
+
   damp = xt * gm->damping_model->get_damp_prefactor();
 
   double Fscrit = gm->normal_model->get_fncrit() * mu;
   double *history = &gm->history[history_index];
   
-  scale3(-k, history, gm->Ftangelas_prevvec);
+  scale3(-k, history, Ftangelas_prevvec);
 
   // rotate and update displacements / force.
   // see e.g. eq. 17 of Luding, Gran. Matter 2008, v10,p235
@@ -206,7 +203,8 @@ void GranSubModTangentialLinearHistory::calculate_forces()
 
   // tangential forces = history + tangential velocity damping
   scale3(-k, history, gm->fs);
-  scale3(-k, history, gm->Ftangelasvec);
+  scale3(-k, history, Ftangelasvec);
+  //scale3(-k, history, Ftangelas_prevvec);
 
   //Rotating vtr for damping term in nx direction
   if (frame_update && gm->synchronized_verlet == 1) {
@@ -216,14 +214,14 @@ void GranSubModTangentialLinearHistory::calculate_forces()
     copy3(gm->vtr, vtr2);
   }
   scale3(damp, vtr2, temp_array);
-  gm->Ftangdamp = len3(temp_array);
+  Ftangdamp = len3(temp_array);
   sub3(gm->fs, temp_array, gm->fs);
 
   // rescale frictional displacements and forces if needed
   magfs = len3(gm->fs);
-  gm->fric_on = (magfs > Fscrit);
+  bool fric_on = magfs > Fscrit;
 
-  if (gm->fric_on) {
+  if (fric_on) {
     shrmag = len3(history);
 
     if (shrmag != 0.0) {
@@ -233,39 +231,37 @@ void GranSubModTangentialLinearHistory::calculate_forces()
       add3(history, temp_array, history);
       scale3(-1.0 / k, history);
       scale3(Fscrit * magfs_inv, gm->fs);
-      scale3(Fscrit * magfs_inv, gm->Ftangelasvec);
-      gm->Ftangdamp = Fscrit * magfs_inv * gm->Ftangdamp;
+      scale3(Fscrit * magfs_inv, Ftangelasvec);
+      Ftangdamp = Fscrit * magfs_inv * Ftangdamp;
     } else {
       zero3(gm->fs);
-      zero3(gm->Ftangelasvec);
-      gm->Ftangdamp = 0.0;
+      //zero3(Ftangelasvec);
+      Ftangdamp = 0.0;
     }
   }
 
-  gm->StrainEnergyTang = 0.5 * pow(len3(gm->Ftangelasvec), 2) / k;
+  gm->dq_damp_hold = Ftangdamp * gm->vrel * gm->dt;
+
+  gm->StrainEnergyTang = 0.5 * dot3(Ftangelasvec, Ftangelasvec) / k;
+
+  double slip[3];
+  sub3(Ftangelasvec, Ftangelas_prevvec, temp_array);
+  scale3(1.0 / k, temp_array);
+  scale3(gm->dt, gm->vtr, slip);
+  sub3(slip, temp_array, slip);
+  add3(Ftangelas_prevvec, Ftangelasvec, temp_array);
+  scale3(0.5, temp_array);
+  gm->dq_friction_hold = fabs(-dot3(slip, temp_array));
+
 }
 
 /* ---------------------------------------------------------------------- */
 
 double GranSubModTangentialLinearHistory::calculate_heat()
 {
-  double dq_damp, dq_friction = 0.0; 
-
-  gm->dr_td = gm->Ftangdamp * gm->vrel;
-  dq_damp = gm->dr_td * gm->dt;
-
-  if (true)//(gm->fric_on)
-  {
-    double temp_array[3], slip[3];
-    sub3(gm->Ftangelasvec, gm->Ftangelas_prevvec, temp_array);
-    scale3(1.0 / k, temp_array);
-    scale3(gm->dt, gm->vtr, slip);
-    sub3(slip, temp_array, slip);
-    add3(gm->Ftangelas_prevvec, gm->Ftangelasvec, temp_array);
-    scale3(0.5, temp_array);
-    dq_friction = -dot3(slip, temp_array);
-  }
-  gm->dr_f = dq_friction / gm->dt;
+  
+  double dq_friction = gm->dq_friction_hold; 
+  double dq_damp = gm->dq_damp_hold;
 
   dq_damp *= gm->heat_tang_damp;
   dq_friction *= gm->heat_tang_fric;
@@ -296,12 +292,14 @@ void GranSubModTangentialLinearHistoryClassic::calculate_forces()
   double magfs, magfs_inv, rsht, shrmag;
   double temp_array[3];
 
+  double Ftangdamp, Ftangelasvec[3], Ftangelas_prevvec[3];
+
   damp = xt * gm->damping_model->get_damp_prefactor();
 
   double Fscrit = gm->normal_model->get_fncrit() * mu;
   double *history = &gm->history[history_index];
 
-  scale3(-k, history, gm->Ftangelas_prevvec);
+  scale3(-k, history, Ftangelas_prevvec);
 
   // update history
   if (gm->history_update) {
@@ -321,14 +319,14 @@ void GranSubModTangentialLinearHistoryClassic::calculate_forces()
   // tangential forces = history + tangential velocity damping
   if (contact_radius_flag) {
     scale3(-k * gm->contact_radius, history, gm->fs);
-    scale3(-k * gm->contact_radius, history, gm->Ftangelasvec);
+    scale3(-k * gm->contact_radius, history, Ftangelasvec);
   }
   else {
     scale3(-k, history, gm->fs);
-    scale3(-k, history, gm->Ftangelasvec);
+    scale3(-k, history, Ftangelasvec);
   }
   scale3(damp, gm->vtr, temp_array);
-  gm->Ftangdamp = len3(temp_array);
+  Ftangdamp = len3(temp_array);
   sub3(gm->fs, temp_array, gm->fs);
 
   // rescale frictional displacements and forces if needed
@@ -341,15 +339,19 @@ void GranSubModTangentialLinearHistoryClassic::calculate_forces()
       add3(history, temp_array, history);
       scale3(-1.0 / k, history);
       scale3(Fscrit * magfs_inv, gm->fs);
-      scale3(Fscrit * magfs_inv, gm->Ftangelasvec);
+      scale3(Fscrit * magfs_inv, Ftangelasvec);
     } else {
       zero3(gm->fs);
-      zero3(gm->Ftangelasvec);
-      gm->Ftangdamp = 0.0;
+      zero3(Ftangelasvec);
+      Ftangdamp = 0.0;
     }
   }
-  gm->Ftangdamp = len3(gm->vtr) * damp;
-  gm->StrainEnergyTang = 0.5 * pow(len3(gm->Ftangelasvec), 2) / k;
+  Ftangdamp = len3(gm->vtr) * damp;
+  gm->dq_damp_hold = damp * dot3(gm->vtr, gm->vtr) * gm->dt; 
+
+  gm->dq_friction_hold = 0.0; // to implement
+
+  gm->StrainEnergyTang = 0.5 * dot3(Ftangelasvec, Ftangelasvec) / k;
 
 }
 
@@ -357,19 +359,8 @@ void GranSubModTangentialLinearHistoryClassic::calculate_forces()
 
 double GranSubModTangentialLinearHistoryClassic::calculate_heat()
 {
-  double dq_damp, dq_friction; 
-  gm->dr_td = gm->Ftangdamp * gm->vrel;
-  dq_damp = gm->dr_td * gm->dt;
-
-  double temp_array[3], slip[3];
-  sub3(gm->Ftangelas_prevvec, gm->Ftangelasvec, temp_array);
-  scale3(1.0 / k, temp_array);
-  scale3(gm->dt, gm->vtr, slip);
-  add3(slip, temp_array, slip);
-  add3(gm->Ftangelas_prevvec, gm->Ftangelasvec, temp_array);
-  scale3(-0.5, temp_array);
-  dq_friction = dot3(slip, temp_array);
-  gm->dr_f = dq_friction / gm->dt;
+  double dq_damp = gm->dq_damp_hold;
+  double dq_friction = gm->dq_friction_hold;
 
   dq_damp *= gm->heat_tang_damp;
   dq_friction *= gm->heat_tang_fric;
@@ -456,6 +447,8 @@ void GranSubModTangentialMindlin::calculate_forces()
   double temp_array[3], vtr2[3];
   int frame_update = 0;
 
+  double Ftangdamp, Ftangelasvec[3], Ftangelas_prevvec[3];
+
   damp = xt * gm->damping_model->get_damp_prefactor();
 
   double *history = &gm->history[history_index];
@@ -463,11 +456,11 @@ void GranSubModTangentialMindlin::calculate_forces()
 
   k_scaled = k * gm->contact_radius;
 
-  zero3(gm->Ftangelas_prevvec);
+  zero3(Ftangelas_prevvec);
   if (!mindlin_force)
-    scale3(-k_scaled, history, gm->Ftangelas_prevvec);
+    scale3(-k_scaled, history, Ftangelas_prevvec);
   else
-    add3(gm->Ftangelas_prevvec, history, gm->Ftangelas_prevvec);
+    add3(Ftangelas_prevvec, history, Ftangelas_prevvec);
 
   // on unloading, rescale the shear displacements/force
   if (mindlin_rescale)
@@ -518,16 +511,16 @@ void GranSubModTangentialMindlin::calculate_forces()
     copy3(gm->vtr, vtr2);
   }
   scale3(-damp, vtr2, gm->fs);
-  gm->Ftangdamp = len3(gm->fs);
+  Ftangdamp = len3(gm->fs);
 
-  zero3(gm->Ftangelasvec);
+  zero3(Ftangelasvec);
   if (!mindlin_force) {
     scale3(k_scaled, history, temp_array);
     sub3(gm->fs, temp_array, gm->fs);
-    scale3(-k_scaled, history, gm->Ftangelasvec);
+    scale3(-k_scaled, history, Ftangelasvec);
   } else {
     add3(gm->fs, history, gm->fs);
-    add3(gm->Ftangelasvec, history, gm->Ftangelasvec);
+    add3(Ftangelasvec, history, Ftangelasvec);
   }
 
   // rescale frictional displacements and forces if needed
@@ -539,44 +532,36 @@ void GranSubModTangentialMindlin::calculate_forces()
       scale3(Fscrit * magfs_inv, gm->fs, history);
       scale3(damp, gm->vtr, temp_array);
 
-      gm->Ftangdamp = damp * len3(gm->vtr);
+      Ftangdamp = damp * len3(gm->vtr);
       
       add3(history, temp_array, history);
       if (!mindlin_force) scale3(-1.0 / k_scaled, history);
       scale3(Fscrit * magfs_inv, gm->fs);
 
-      scale3(Fscrit * magfs_inv, gm->Ftangelasvec);
+      scale3(Fscrit * magfs_inv, Ftangelasvec);
 
     } else {
       zero3(gm->fs);
 
-      zero3(gm->Ftangelasvec);
-      gm->Ftangdamp = 0.0;
+      zero3(Ftangelasvec);
+      Ftangdamp = 0.0;
     
     }
   }
-  gm->StrainEnergyTang = 0.5 * pow(len3(gm->Ftangelasvec), 2) / k_scaled;
+
+  gm->dq_damp_hold = Ftangdamp * len3(gm->vtr) * gm->dt;
+
+  gm->dq_friction_hold = 0.0; // to implement
+
+  gm->StrainEnergyTang = 0.5 * dot3(Ftangelasvec, Ftangelasvec) / k_scaled;
 }
 
 /* ---------------------------------------------------------------------- */
 
 double GranSubModTangentialMindlin::calculate_heat()
 {
-  double dq_damp, dq_friction; 
-
-  gm->dr_td = gm->Ftangdamp * gm->vrel;
-  dq_damp = gm->dr_td * gm->dt;
-
-  double temp_array[3], slip[3];
-  sub3(gm->Ftangelas_prevvec, gm->Ftangelasvec, temp_array);
-  double k_scaled = k * gm->contact_radius;
-  scale3(1.0 / k_scaled, temp_array);
-  scale3(gm->dt, gm->vtr, slip);
-  add3(slip, temp_array, slip);
-  add3(gm->Ftangelas_prevvec, gm->Ftangelasvec, temp_array);
-  scale3(-0.5, temp_array);
-  dq_friction = dot3(slip, temp_array);
-  gm->dr_f = dq_friction / gm->dt;
+  double dq_damp = gm->dq_damp_hold;
+  double dq_friction = gm->dq_friction_hold;
 
   dq_damp *= gm->heat_tang_damp;
   dq_friction *= gm->heat_tang_fric;

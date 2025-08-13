@@ -3,9 +3,9 @@ units si
 variable grainDiameter equal 0.005
 variable grainDensity equal 1000
 variable random_seed equal 10007 
-variable Lx equal v_grainDiameter*4.01
-variable Ly equal v_grainDiameter*4.01
-variable Lz equal v_grainDiameter*4.01
+variable Lx equal v_grainDiameter*3.01
+variable Ly equal v_grainDiameter*3.01
+variable Lz equal v_grainDiameter*3.01
 variable writeFrequency equal 600000
 variable timeStep equal 1e-9
 timestep ${timeStep}
@@ -16,7 +16,7 @@ neighbor ${sizefrac} nsq
 boundary p p p
 atom_style sphere
 atom_modify	map array sort 0 0
-newton off
+#newton off
 neigh_modify delay 0 
 region regWhole block 0 ${Lx} 0 ${Ly} 0 ${Lz} units box
 create_box 4 regWhole
@@ -30,8 +30,8 @@ set group all diameter ${grainDiameter} density ${grainDensity}
 pair_style granular
 #pair_coeff * * hooke 1e5 1e-1 tangential linear_nohistory 1.0 0.15 damping velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
 #pair_coeff * * hooke 1e5 1e-2 tangential linear_nohistory 0.1 0.2 damping mass_velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
-pair_coeff * * hooke 1e6 1e-2 tangential linear_history 0.29e6 1.0 0.15 damping velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
-#pair_coeff * * hertz/material 1e8 0.75 0.3 tangential mindlin_rescale/force NULL 0.1 0.15 damping tsuji dissipative_heat 1.0 1.0 1.0 heat area 0.1
+pair_coeff * * hooke 2e5 1e-2 tangential linear_history 0.6e5 0.0 0.15 damping velocity dissipative_heat 1.0 1.0 1.0 heat area 0.1
+#pair_coeff * * hertz/material 1e8 0.75 0.3 tangential mindlin_rescale/force NULL 0.1 0.15 damping tsuji dissipative_heat 1.0 1.0 1.0 heat area 0.1 synchronized_verlet
 #pair_coeff * * hertz/material 1e8 0.3 0.3 tangential linear_history 1e5 0.1 0.2 damping tsuji limit_damping dissipative_heat 1.0 1.0 1.0 heat area 0.1
 #pair_coeff * * hertz/material 1e8 0.75 0.3 tangential linear_history 1e5 0.1 0.2 damping tsuji dissipative_heat 1.0 1.0 1.0 heat area 0.1
 
@@ -42,9 +42,10 @@ compute RotKinEng all reduce sum c_RotKinEng_atom
 compute pairs all pair/local p13 p14 p15
 compute pairIDs all property/local patom1 patom2
 compute AccumDiss all reduce sum c_pairs[*] inputs local
+compute DissrateAtom all dissipationrate/atom 
 thermo_style custom step atoms time c_KinEng c_RotKinEng c_PotEng c_AccumDiss[1] c_AccumDiss[2] c_AccumDiss[3]
 thermo ${writeFrequency}
-fix allowT all property/atom temperature heatflow
+fix allowT all property/atom temperature heatflow ghost yes
 fix calcT all heat/flow constant 740 # specific heat of quartz
 compute storeT all property/atom temperature
 compute meanT all reduce sum c_storeT
@@ -54,9 +55,12 @@ velocity all create ${init_temp} 10007
 fix integ all nve/sphere
 run ${writeFrequency}
 variable avewindow equal 100
+
+variable howcompute equal 0
 fix 1 all ave/time 1 ${avewindow} ${avewindow} c_KinEng c_RotKinEng c_PotEng c_AccumDiss[1] c_AccumDiss[2] c_AccumDiss[3] c_meanT file energy.dat
+
 dump dum_contacts all local ${writeFrequency} dumpfiles/contacts_* c_pairIDs[1] c_pairIDs[2] c_pairs[1] c_pairs[2] c_pairs[3]
-dump dum_all all custom ${writeFrequency} dumpfiles/all_* id radius x y z vx vy vz omegax omegay omegaz c_storeT c_PotEngAtom
+dump dum_all all custom ${writeFrequency} dumpfiles/all_* id radius x y z vx vy vz omegax omegay omegaz c_storeT c_PotEngAtom c_DissrateAtom[1] c_DissrateAtom[2] c_DissrateAtom[3]
 info variables out overwrite info
 variable runUntil equal floor(v_writeFrequency*50)
 run ${runUntil}

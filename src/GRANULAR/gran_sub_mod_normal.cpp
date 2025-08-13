@@ -294,7 +294,7 @@ double GranSubModNormalDMT::calculate_forces()
   Fne = k * gm->contact_radius * gm->delta;
   F_pulloff = 4.0 * MY_PI * cohesion * gm->Reff;
   Fne -= F_pulloff;
-  gm->StrainEnergyNorm = 0.5 * pow(Fne, 2) / k;
+  gm->StrainEnergyNorm = 0.5 * pow(Fne, 2) / k / gm->contact_radius;
   return Fne;
 }
 
@@ -423,7 +423,7 @@ double GranSubModNormalJKR::calculate_forces()
   Fne = k * gm->contact_radius * a2 / gm->Reff -
       MY_2PI * a2 * sqrt(4.0 * cohesion * Emix / (MY_PI * gm->contact_radius));
   F_pulloff = 3.0 * MY_PI * cohesion * gm->Reff;
-  gm->StrainEnergyNorm = 0.5 * pow(Fne, 2) / k;
+  gm->StrainEnergyNorm = 0.0;
 
   return Fne;
 }

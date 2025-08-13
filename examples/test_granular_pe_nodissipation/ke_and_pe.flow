@@ -1,0 +1,54 @@
+shell mkdir dumpfiles
+units si
+variable grainDiameter equal 0.005
+variable grainDensity equal 1000
+variable random_seed equal 10007 
+variable Lx equal v_grainDiameter*4.01
+variable Ly equal v_grainDiameter*4.01
+variable Lz equal v_grainDiameter*4.01
+variable writeFrequency equal 600000
+variable timeStep equal 1e-9
+timestep ${timeStep}
+
+comm_modify mode single vel yes
+variable sizefrac equal v_grainDiameter/2
+neighbor ${sizefrac} nsq
+boundary p p p
+atom_style sphere
+atom_modify	map array sort 0 0
+newton off
+neigh_modify delay 0 
+region regWhole block 0 ${Lx} 0 ${Ly} 0 ${Lz} units box
+create_box 4 regWhole
+variable eps equal v_grainDiameter/100
+region regionForGrains block ${eps} ${Lx} ${eps} ${Ly} ${eps} ${Lz} units box
+variable lattice_size equal v_grainDiameter*0.999#1.0001
+lattice sc ${lattice_size}
+create_atoms 1 region regionForGrains
+set group all diameter ${grainDiameter} density ${grainDensity}
+
+pair_style granular
+#pair_coeff * * hooke 1e5 0.0 tangential linear_nohistory 0.0 1e16 damping velocity
+pair_coeff * * hooke 1e6 0.0 tangential linear_history 0.29e6 0.0 1e16 damping velocity 
+#pair_coeff * * hertz 1e7 0.0 tangential linear_nohistory 0.0 0.0 damping velocity
+#pair_coeff * * hertz/material 1e7 0.0 0.3 tangential linear_nohistory 0.0 0.0 damping velocity
+#pair_coeff * * hertz/material 1e7 0.0 0.3 tangential linear_history 0.29e6 0.0 0.0 damping velocity
+#pair_coeff * * hertz/material 1e8 1.0 0.3 tangential mindlin_rescale/force NULL 0.0 0.0 damping tsuji
+
+compute KinEng all ke
+compute PotEng all pe
+compute RotKinEng_atom all erotate/sphere/atom
+compute RotKinEng all reduce sum c_RotKinEng_atom
+thermo_style custom step atoms time c_KinEng c_RotKinEng c_PotEng
+thermo ${writeFrequency}
+compute PotEngAtom all pe/atom
+variable init_temp equal PI*v_grainDensity*v_grainDiameter^3/6*0.01^2/1.38e-23 # m*v_rms^2/3/k_B
+velocity all create ${init_temp} 10007
+fix integ all nve/sphere
+run 0
+variable avewindow equal 100
+fix 1 all ave/time 1 ${avewindow} ${avewindow} c_KinEng c_RotKinEng c_PotEng file energy.dat
+dump dum_all all custom ${writeFrequency} dumpfiles/all_* id radius x y z vx vy vz omegax omegay omegaz c_PotEngAtom
+info variables out overwrite info
+variable runUntil equal floor(v_writeFrequency*50)
+run ${runUntil}

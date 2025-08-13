@@ -164,7 +164,6 @@ void PairGranular::compute(int eflag, int vflag)
     heatflow = atom->heatflow;
     temperature = atom->temperature;
   }
-  double *dissipationrate;
 
   inum = list->inum;
   ilist = list->ilist;
@@ -270,11 +269,6 @@ void PairGranular::compute(int eflag, int vflag)
         add3(torque[j], torquesj, torque[j]);
       }
 
-      if (model->dissipative_heat) {
-        // dissipation rates from normal and tangential damping and friction
-        dissipationrate[i] += 0.5 * (model->dr_nd + model->dr_td + model->dr_f);
-      }
-
       if (heat_flag) {
         heatflow[i] += model->dq_conduct + 0.5 * model->dq_dissipate;
         if (force->newton_pair || j < nlocal)
@@ -282,11 +276,8 @@ void PairGranular::compute(int eflag, int vflag)
       }
 
       if (evflag) {
-        //ev_tally_xyz(i,j,nlocal,force->newton_pair,
-          //0.0,0.0,forces[0],forces[1],forces[2],model->dx[0],model->dx[1],model->dx[2]);
-        double strain_energy = model->StrainEnergyNorm + model->StrainEnergyTang;
         ev_tally_xyz(i,j,nlocal,force->newton_pair,
-          strain_energy,0.0,forces[0],forces[1],forces[2],model->dx[0],model->dx[1],model->dx[2]);
+          model->StrainEnergyNorm,model->StrainEnergyTang,forces[0],forces[1],forces[2],model->dx[0],model->dx[1],model->dx[2]);
       }
 
     }
