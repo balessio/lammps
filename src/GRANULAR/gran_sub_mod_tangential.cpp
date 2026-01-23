@@ -165,7 +165,7 @@ void GranSubModTangentialLinearHistory::coeffs_to_local()
 
 /* ---------------------------------------------------------------------- */
 
-void GranSubModTangentialLinearHistory::calculate_forces()
+/*void GranSubModTangentialLinearHistory::calculate_forces()
 {
   // Note: this is the same as the base Mindlin calculation except k isn't scaled by contact radius
   double magfs, magfs_inv, rsht, shrmag, temp_array[3], vtr2[3];
@@ -187,6 +187,7 @@ void GranSubModTangentialLinearHistory::calculate_forces()
     frame_update = (fabs(rsht) * k) > (EPSILON * Fscrit);
 
     if (frame_update) rotate_rescale_vec(history, gm->nx);
+    scale3(-k, history, Ftangelas_prevvec);
 
     // update history, tangential force using velocities at half step
     // see e.g. eq. 18 of Thornton et al, Pow. Tech. 2013, v223,p30-46
@@ -204,7 +205,6 @@ void GranSubModTangentialLinearHistory::calculate_forces()
   // tangential forces = history + tangential velocity damping
   scale3(-k, history, gm->fs);
   scale3(-k, history, Ftangelasvec);
-  //scale3(-k, history, Ftangelas_prevvec);
 
   //Rotating vtr for damping term in nx direction
   if (frame_update && gm->synchronized_verlet == 1) {
@@ -235,14 +235,11 @@ void GranSubModTangentialLinearHistory::calculate_forces()
       Ftangdamp = Fscrit * magfs_inv * Ftangdamp;
     } else {
       zero3(gm->fs);
-      //zero3(Ftangelasvec);
+      zero3(Ftangelasvec);
       Ftangdamp = 0.0;
     }
   }
-
-  gm->dq_damp_hold = Ftangdamp * gm->vrel * gm->dt;
-
-  gm->StrainEnergyTang = 0.5 * dot3(Ftangelasvec, Ftangelasvec) / k;
+  else gm->dq_friction_hold = 0.0;
 
   double slip[3];
   sub3(Ftangelasvec, Ftangelas_prevvec, temp_array);
@@ -251,7 +248,96 @@ void GranSubModTangentialLinearHistory::calculate_forces()
   sub3(slip, temp_array, slip);
   add3(Ftangelas_prevvec, Ftangelasvec, temp_array);
   scale3(0.5, temp_array);
-  gm->dq_friction_hold = fabs(-dot3(slip, temp_array));
+  gm->dq_friction_hold = -dot3(slip, temp_array);
+  if (!fric_on) gm->dq_friction_hold = 0.0;
+
+  gm->dq_damp_hold = Ftangdamp * gm->vrel * gm->dt;
+  gm->StrainEnergyTang = 0.5 * dot3(Ftangelasvec, Ftangelasvec) / k;
+
+}*/
+
+/* ---------------------------------------------------------------------- */
+
+void GranSubModTangentialLinearHistory::calculate_forces()
+{
+  // Note: this is the same as the base Mindlin calculation except k isn't scaled by contact radius
+  double magfs, magfs_inv, rsht, shrmag, temp_array[3], vtr2[3];
+  int frame_update = 0;
+
+  double F_tang_elas[3], F_tang_elas_prev[3], history_prev[3], slip[3];
+
+  damp = xt * gm->damping_model->get_damp_prefactor();
+
+  double Fscrit = gm->normal_model->get_fncrit() * mu;
+  double *history = &gm->history[history_index];
+
+  copy3(history, history_prev);
+  scale3(-k, history_prev, F_tang_elas_prev);
+
+  // rotate and update displacements / force.
+  // see e.g. eq. 17 of Luding, Gran. Matter 2008, v10,p235
+  if (gm->history_update) {
+    rsht = dot3(history, gm->nx);
+    frame_update = (fabs(rsht) * k) > (EPSILON * Fscrit);
+
+    if (frame_update) rotate_rescale_vec(history, gm->nx);
+
+    // update history, tangential force using velocities at half step
+    // see e.g. eq. 18 of Thornton et al, Pow. Tech. 2013, v223,p30-46
+    scale3(gm->dt, gm->vtr, temp_array);
+    add3(history, temp_array, history);
+
+    if(gm->synchronized_verlet == 1) {
+      rsht = dot3(history, gm->nx_unrotated);
+      frame_update = (fabs(rsht) * k) > (EPSILON * Fscrit);
+      //Second projection to nx (t+\Delta t)
+      if (frame_update) rotate_rescale_vec(history, gm->nx_unrotated);
+    }
+  }
+
+  // tangential forces = history + tangential velocity damping
+  scale3(-k, history, gm->fs);
+
+  //Rotating vtr for damping term in nx direction
+  if (frame_update && gm->synchronized_verlet == 1) {
+    copy3(gm->vtr, vtr2);
+    rotate_rescale_vec(vtr2, gm->nx_unrotated);
+  } else {
+    copy3(gm->vtr, vtr2);
+  }
+  scale3(damp,vtr2, temp_array);
+
+  gm->dq_damp_hold = fabs(dot3(temp_array, vtr2))*gm->dt;
+
+  sub3(gm->fs, temp_array, gm->fs);
+
+  // rescale frictional displacements and forces if needed
+  magfs = len3(gm->fs);
+  if (magfs > Fscrit) {
+    shrmag = len3(history);
+    if (shrmag != 0.0) {
+      magfs_inv = 1.0 / magfs;
+      scale3(Fscrit * magfs_inv, gm->fs, history);
+      scale3(damp, gm->vtr, temp_array);
+      add3(history, temp_array, history);
+      scale3(-1.0 / k, history);
+      scale3(Fscrit * magfs_inv, gm->fs);
+    } else {
+      zero3(gm->fs);
+    }
+  }
+
+  scale3(-k, history, F_tang_elas);
+  add3(F_tang_elas, F_tang_elas_prev, temp_array);
+  scale3(0.5, temp_array, temp_array);
+
+  scale3(gm->dt, vtr2, slip);
+  sub3(slip, history, slip);
+  add3(slip, history_prev, slip);
+
+  gm->dq_friction_hold = fabs(dot3(slip, temp_array));
+
+  gm->StrainEnergyTang = 0.5*dot3(F_tang_elas, F_tang_elas)/k;
 
 }
 
