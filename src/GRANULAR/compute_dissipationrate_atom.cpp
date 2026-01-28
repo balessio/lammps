@@ -142,7 +142,7 @@ void ComputeDissipationrateAtom::compute_peratom()
       j &= NEIGHMASK;
       jtype = type[j];
 
-      // Only tally for atoms in compute group (groupbit) 
+      // Only tally for atoms in compute group (groupbit)
       update_i_flag = (mask[i] & groupbit);
       update_j_flag = (mask[j] & groupbit);
       if (!update_i_flag && !update_j_flag) continue;
@@ -157,9 +157,17 @@ void ComputeDissipationrateAtom::compute_peratom()
 
       pair->single(i, j, itype, jtype, rsq, 1.0, 1.0, fpair);
 
-      dissipationrate[i][0] += 0.5 * force->pair->svector[12] / update->dt;
-      dissipationrate[i][1] += 0.5 * force->pair->svector[13] / update->dt;
-      dissipationrate[i][2] += 0.5 * force->pair->svector[14] / update->dt;
+      if (update_i_flag) {
+        dissipationrate[i][0] += 0.5 * force->pair->svector[12] / update->dt;
+        dissipationrate[i][1] += 0.5 * force->pair->svector[13] / update->dt;
+        dissipationrate[i][2] += 0.5 * force->pair->svector[14] / update->dt;
+      }
+
+      if (update_j_flag) {
+        dissipationrate[j][0] -= 0.5 * force->pair->svector[12] / update->dt;
+        dissipationrate[j][1] -= 0.5 * force->pair->svector[13] / update->dt;
+        dissipationrate[j][2] -= 0.5 * force->pair->svector[14] / update->dt;
+      }
     }
   }
 
