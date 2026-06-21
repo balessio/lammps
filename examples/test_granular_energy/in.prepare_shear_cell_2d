@@ -1,0 +1,82 @@
+units si
+dimension 2
+atom_style sphere
+boundary p f p
+newton off
+comm_modify mode single vel yes
+atom_modify map array sort 0 0
+
+timestep ${dt}
+
+region box block 0.0 0.060 -0.006 0.060 -0.0005 0.0005 units box
+create_box 3 box
+
+variable grainDensity equal 1000
+variable clumpDensity equal 2000
+
+lattice hex 0.0055
+region grains block 0.003 0.057 0.007 0.040 INF INF units box
+create_atoms 1 region grains
+
+lattice sq 0.0055
+region bottom_clumps block 0.0 0.060 0.000 0.002 INF INF units box
+create_atoms 2 region bottom_clumps
+region top_clumps block 0.0 0.060 0.042 0.046 INF INF units box
+create_atoms 3 region top_clumps
+
+group mobile type 1
+group bottom type 2
+group top type 3
+group clumps union bottom top
+
+variable grainDiameter atom random(0.0045,0.0054,31027)
+set group mobile diameter v_grainDiameter density ${grainDensity}
+set group bottom diameter 0.0058 density ${clumpDensity}
+set group top diameter 0.0058 density ${clumpDensity}
+displace_atoms top move 0.0 0.0010 0.0 units box
+
+displace_atoms mobile random 0.00010 0.00010 0.0 90173 units box
+variable vx0 atom random(-0.005,0.005,41001)
+variable vy0 atom random(-0.005,0.005,41002)
+set group mobile vx v_vx0
+set group mobile vy v_vy0
+velocity bottom set 0.0 0.0 0.0 units box
+velocity top set 0.0 0.0 0.0 units box
+
+neighbor 0.003 bin
+neigh_modify delay 0 every 1 check yes exclude group clumps clumps
+
+pair_style granular
+include ${pair_file}
+
+fix plane all enforce2d
+fix mobile_nve mobile nve/sphere
+
+variable zero equal 0.0
+compute TopForce top reduce sum fy
+variable NormalStress equal c_TopForce/lx
+variable servoRaw equal ${servoGain}*(v_NormalStress-${pressure})
+variable servoVy equal ternary(v_servoRaw>${servoMax},${servoMax},ternary(v_servoRaw<-${servoMax},-${servoMax},v_servoRaw))
+fix bottom_move bottom move linear 0.0 0.0 0.0 units box
+fix top_move top move variable NULL NULL NULL v_zero v_servoVy NULL units box
+
+thermo_style custom step atoms v_NormalStress v_servoVy
+thermo ${thermoEvery}
+
+fix prep_out all ave/time 1 ${avewindow} ${avewindow} v_NormalStress v_servoVy file ${outdir}/prep.dat
+
+if "${dump} > 0" then &
+  "dump prep_dump all custom ${dumpEvery} ${outdir}/prep_dumpfiles/all_*.lammpstrj id type radius x y z vx vy vz"
+
+run ${prepSteps}
+
+unfix mobile_nve
+unfix bottom_move
+unfix top_move
+velocity mobile set 0.0 0.0 0.0 units box
+velocity top set 0.0 0.0 0.0 units box
+velocity bottom set 0.0 0.0 0.0 units box
+set group all omega 0.0 0.0 0.0
+
+write_data ${data_file} nocoeff
+write_restart ${restart_file}

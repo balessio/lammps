@@ -377,6 +377,10 @@ void GranularModel::write_restart(FILE *fp)
   }
 
   fwrite(&limit_damping, sizeof(int), 1, fp);
+  fwrite(&dissipative_heat, sizeof(int), 1, fp);
+  fwrite(&heat_norm_damp, sizeof(double), 1, fp);
+  fwrite(&heat_tang_damp, sizeof(double), 1, fp);
+  fwrite(&heat_tang_fric, sizeof(double), 1, fp);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -411,6 +415,17 @@ void GranularModel::read_restart(FILE *fp)
   if (comm->me == 0)
     utils::sfread(FLERR, &limit_damping, sizeof(int), 1, fp, nullptr, error);
   MPI_Bcast(&limit_damping, 1, MPI_INT, 0, world);
+
+  if (comm->me == 0) {
+    utils::sfread(FLERR, &dissipative_heat, sizeof(int), 1, fp, nullptr, error);
+    utils::sfread(FLERR, &heat_norm_damp, sizeof(double), 1, fp, nullptr, error);
+    utils::sfread(FLERR, &heat_tang_damp, sizeof(double), 1, fp, nullptr, error);
+    utils::sfread(FLERR, &heat_tang_fric, sizeof(double), 1, fp, nullptr, error);
+  }
+  MPI_Bcast(&dissipative_heat, 1, MPI_INT, 0, world);
+  MPI_Bcast(&heat_norm_damp, 1, MPI_DOUBLE, 0, world);
+  MPI_Bcast(&heat_tang_damp, 1, MPI_DOUBLE, 0, world);
+  MPI_Bcast(&heat_tang_fric, 1, MPI_DOUBLE, 0, world);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -448,6 +463,13 @@ bool GranularModel::check_contact()
 
 void GranularModel::calculate_forces()
 {
+  StrainEnergyNorm = 0.0;
+  StrainEnergyTang = 0.0;
+  dq_conduct = 0.0;
+  dq_dissipate = 0.0;
+  dq_damp_hold = 0.0;
+  dq_friction_hold = 0.0;
+
   // Standard geometric quantities
 
   if (contact_type != WALLREGION) r = sqrt(rsq);

@@ -24,6 +24,7 @@
 #include "comm.h"
 #include "granular_model.h"
 #include "gran_sub_mod.h"
+#include "gran_sub_mod_tangential.h"
 #include "error.h"
 #include "fix.h"
 #include "fix_dummy.h"
@@ -41,6 +42,8 @@
 using namespace LAMMPS_NS;
 using namespace Granular_NS;
 using namespace MathExtra;
+
+static constexpr int ENERGY_HISTORY_SIZE = 3;
 
 /* ---------------------------------------------------------------------- */
 
@@ -69,6 +72,7 @@ PairGranular::PairGranular(LAMMPS *lmp) : Pair(lmp)
 
   use_history = 0;
   size_history = 0;
+  energy_history_offset = -1;
   beyond_contact = 0;
   nondefault_history_transfer = 0;
   heat_flag = 0;
@@ -209,11 +213,31 @@ void PairGranular::compute(int eflag, int vflag)
       touchflag = model->check_contact();
 
       if (!touchflag) {
-        // unset non-touching neighbors
         if (use_history) {
-          touch[jj] = 0;
           history = &allhistory[size_history * jj];
-          for (k = 0; k < size_history; k++) history[k] = 0.0;
+          model->history = history;
+
+          if (touch[jj] == 1) {
+            const double lost_energy = model->heat_tang_fric *
+                model->tangential_model->elastic_potential();
+            if (energy_history_offset >= 0) {
+              history[energy_history_offset] = 0.0;
+              history[energy_history_offset + 1] = 0.0;
+              history[energy_history_offset + 2] = lost_energy;
+            }
+            if (heat_flag && model->dissipative_heat && lost_energy != 0.0) {
+              const double lost_power = lost_energy / update->dt;
+              heatflow[i] += 0.5 * lost_power;
+              if (force->newton_pair || j < nlocal) heatflow[j] += 0.5 * lost_power;
+            }
+
+            // Preserve the deleted-contact energy for pair->single based diagnostics
+            // in this timestep. The next force calculation clears the history.
+            touch[jj] = 2;
+          } else {
+            touch[jj] = 0;
+            for (k = 0; k < size_history; k++) history[k] = 0.0;
+          }
         }
         continue;
       }
@@ -250,7 +274,22 @@ void PairGranular::compute(int eflag, int vflag)
         model->Tj = temperature[j];
       }
 
+      if (energy_history_offset >= 0) {
+        history[energy_history_offset] = 0.0;
+        history[energy_history_offset + 1] = 0.0;
+        history[energy_history_offset + 2] = 0.0;
+        if (model->dissipative_heat) model->calculate_svector = 1;
+      }
+
       model->calculate_forces();
+      if (energy_history_offset >= 0) {
+        if (model->dissipative_heat && model->svector) {
+          history[energy_history_offset] = model->nsvector > 0 ? model->svector[0] : 0.0;
+          history[energy_history_offset + 1] = model->nsvector > 1 ? model->svector[1] : 0.0;
+          history[energy_history_offset + 2] = model->nsvector > 2 ? model->svector[2] : 0.0;
+        }
+        model->calculate_svector = 0;
+      }
 
       forces = model->forces;
       torquesi = model->torquesi;
@@ -270,14 +309,15 @@ void PairGranular::compute(int eflag, int vflag)
       }
 
       if (heat_flag) {
-        heatflow[i] += model->dq_conduct + 0.5 * model->dq_dissipate;
+        heatflow[i] += model->dq_conduct + 0.5 * model->dq_dissipate / update->dt;
         if (force->newton_pair || j < nlocal)
-          heatflow[j] += -model->dq_conduct + 0.5 * model->dq_dissipate;
+          heatflow[j] += -model->dq_conduct + 0.5 * model->dq_dissipate / update->dt;
       }
 
       if (evflag) {
+        const double strain_energy = model->StrainEnergyNorm + model->StrainEnergyTang;
         ev_tally_xyz(i,j,nlocal,force->newton_pair,
-          model->StrainEnergyNorm,model->StrainEnergyTang,forces[0],forces[1],forces[2],model->dx[0],model->dx[1],model->dx[2]);
+          strain_energy,0.0,forces[0],forces[1],forces[2],model->dx[0],model->dx[1],model->dx[2]);
       }
 
     }
@@ -433,10 +473,16 @@ void PairGranular::init_style()
   class GranularModel* model;
   int nsvector_total;
   extra_svector = 0;
+  energy_history_offset = -1;
+  bool store_energy_history = false;
   int size_max[NSUBMODELS] = {0};
   for (int n = 0; n < nmodels; n++) {
     model = models_list[n];
 
+    if (model->dissipative_heat) {
+      use_history = 1;
+      store_energy_history = true;
+    }
     if (model->beyond_contact) {
       beyond_contact = 1;
       use_history = 1; // Need to track if in contact
@@ -468,6 +514,12 @@ void PairGranular::init_style()
     // This could occur if normal model is beyond_contact but no other entries are required
     // E.g. JKR + linear_nohistory
     size_history = MAX(size_history, 1);
+  }
+
+  if (store_energy_history) {
+    energy_history_offset = size_history;
+    size_history += ENERGY_HISTORY_SIZE;
+    nondefault_history_transfer = 1;
   }
 
   for (int n = 0; n < nmodels; n++) {
@@ -768,6 +820,15 @@ double PairGranular::single(int i, int j, int itype, int jtype,
   if (!touchflag) {
     fforce = 0.0;
     for (int m = 0; m < single_extra; m++) svector[m] = 0.0;
+    if (use_history && model->dissipative_heat && single_extra >= 15) {
+      if (energy_history_offset >= 0) {
+        svector[12] = history[energy_history_offset];
+        svector[13] = history[energy_history_offset + 1];
+        svector[14] = history[energy_history_offset + 2];
+      } else {
+        svector[14] = model->heat_tang_fric * model->tangential_model->elastic_potential();
+      }
+    }
     return 0.0;
   }
 
@@ -828,6 +889,12 @@ double PairGranular::single(int i, int j, int itype, int jtype,
   for (int n = 12 + model->nsvector; n < single_extra; n++)
     svector[n] = 0.0;
 
+  if (use_history && model->dissipative_heat && energy_history_offset >= 0 && single_extra >= 15) {
+    svector[12] = history[energy_history_offset];
+    svector[13] = history[energy_history_offset + 1];
+    svector[14] = history[energy_history_offset + 2];
+  }
+
   return 0.0;
 }
 
@@ -876,6 +943,8 @@ double PairGranular::memory_usage()
 void PairGranular::transfer_history(double* source, double* target, int itype, int jtype)
 {
   class GranularModel* model = models_list[types_indices[itype][jtype]];
+  for (int i = 0; i < size_history; i++) target[i] = 0.0;
+
   if (model->nondefault_history_transfer) {
     for (int i = 0; i < model->size_history; i++) {
       target[i] = model->transfer_history_factor[i] * source[i];
@@ -884,6 +953,11 @@ void PairGranular::transfer_history(double* source, double* target, int itype, i
     for (int i = 0; i < model->size_history; i++) {
       target[i] = -source[i];
     }
+  }
+
+  if (energy_history_offset >= 0) {
+    for (int i = 0; i < ENERGY_HISTORY_SIZE; i++)
+      target[energy_history_offset + i] = source[energy_history_offset + i];
   }
 }
 

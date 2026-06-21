@@ -61,3 +61,53 @@ src/Makefile.package.settings-e
 /install/x64-GUI-MSVC
 /install
 .Rhistory
+
+# Local simulation outputs
+dumpfiles/
+dumpfiles*/
+**/dumpfiles/
+**/dumpfiles*/
+dumps/
+**/dumps/
+dump.*
+*.dump
+*.lammpstrj
+*.atom
+*.custom
+
+# LAMMPS run logs and transient run output
+log.*
+*.log
+screen.*
+info
+slurm-*.out
+*.out
+*.err
+
+# Generated data/result directories
+output/
+outputs/
+results/
+run/
+runs/
+runs*/
+data_output/
+data-output/
+**/output/
+**/outputs/
+**/results/
+**/runs*/
+**/data_output/
+**/data-output/
+/examples/test_granular_energy_accounting/
+
+# Common scalar/time-series files produced by local runs
+energy*.dat
+thermo*.dat
+forces*.dat
+stress*.dat
+contacts*.dat
+
+# LAMMPS restart artifacts
+restart.*
+*.restart

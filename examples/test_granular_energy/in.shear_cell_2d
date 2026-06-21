@@ -1,0 +1,45 @@
+newton off
+read_restart ${restart_file}
+
+comm_modify mode single vel yes
+timestep ${dt}
+reset_timestep 0
+
+neighbor 0.003 bin
+neigh_modify delay 0 every 1 check yes exclude group clumps clumps
+
+fix plane all enforce2d
+fix mobile_nve mobile nve/sphere
+
+variable shearVel equal ${shearGap}/(${shearSteps}*${dt})
+variable phase equal 1.0
+
+fix allowT all property/atom temperature heatflow ghost yes
+fix calcT all heat/flow constant 740.0
+compute storeT all property/atom temperature
+compute meanT all reduce ave c_storeT
+
+compute DissAtom all dissipationrate/atom
+compute DissAtomSum all reduce sum c_DissAtom[*]
+variable DissRateAtom atom c_DissAtom[1]+c_DissAtom[2]+c_DissAtom[3]
+fix addHeat all add/heat constant v_DissRateAtom
+variable HeatAtom atom mass*740.0*c_storeT
+
+compute TopForce top reduce sum fy
+variable NormalStress equal c_TopForce/lx
+variable servoRaw equal ${servoGain}*(v_NormalStress-${pressure})
+variable servoVy equal ternary(v_servoRaw>${servoMax},${servoMax},ternary(v_servoRaw<-${servoMax},-${servoMax},v_servoRaw))
+fix bottom_move bottom move linear 0.0 0.0 0.0 units box
+fix top_move top move variable NULL NULL NULL v_shearVel v_servoVy NULL units box
+
+thermo_style custom step atoms v_NormalStress v_servoVy c_DissAtomSum[1] c_DissAtomSum[2] c_DissAtomSum[3] c_meanT
+thermo ${thermoEvery}
+
+fix heat_out all ave/time 1 ${avewindow} ${avewindow} &
+  c_DissAtomSum[1] c_DissAtomSum[2] c_DissAtomSum[3] c_meanT v_NormalStress v_servoVy v_phase &
+  file ${outdir}/heat.dat
+
+if "${dump} > 0" then &
+  "dump dump_all all custom ${dumpEvery} ${outdir}/dumpfiles/all_*.lammpstrj id type radius x y z vx vy vz c_DissAtom[1] c_DissAtom[2] c_DissAtom[3] v_DissRateAtom v_HeatAtom c_storeT"
+
+run ${shearSteps}

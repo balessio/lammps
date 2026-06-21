@@ -59,6 +59,13 @@ double GranSubModTangential::calculate_heat()
   return 0.0;
 }
 
+/* ---------------------------------------------------------------------- */
+
+double GranSubModTangential::elastic_potential()
+{
+  return 0.0;
+}
+
 /* ----------------------------------------------------------------------
    No model
 ------------------------------------------------------------------------- */
@@ -271,9 +278,6 @@ void GranSubModTangentialLinearHistory::calculate_forces()
   double Fscrit = gm->normal_model->get_fncrit() * mu;
   double *history = &gm->history[history_index];
 
-  copy3(history, history_prev);
-  scale3(-k, history_prev, F_tang_elas_prev);
-
   // rotate and update displacements / force.
   // see e.g. eq. 17 of Luding, Gran. Matter 2008, v10,p235
   if (gm->history_update) {
@@ -281,6 +285,8 @@ void GranSubModTangentialLinearHistory::calculate_forces()
     frame_update = (fabs(rsht) * k) > (EPSILON * Fscrit);
 
     if (frame_update) rotate_rescale_vec(history, gm->nx);
+
+    copy3(history, history_prev);
 
     // update history, tangential force using velocities at half step
     // see e.g. eq. 18 of Thornton et al, Pow. Tech. 2013, v223,p30-46
@@ -293,7 +299,10 @@ void GranSubModTangentialLinearHistory::calculate_forces()
       //Second projection to nx (t+\Delta t)
       if (frame_update) rotate_rescale_vec(history, gm->nx_unrotated);
     }
+  } else {
+    copy3(history, history_prev);
   }
+  scale3(-k, history_prev, F_tang_elas_prev);
 
   // tangential forces = history + tangential velocity damping
   scale3(-k, history, gm->fs);
@@ -307,35 +316,42 @@ void GranSubModTangentialLinearHistory::calculate_forces()
   }
   scale3(damp,vtr2, temp_array);
 
-  gm->dq_damp_hold = fabs(dot3(temp_array, vtr2))*gm->dt;
-
   sub3(gm->fs, temp_array, gm->fs);
 
   // rescale frictional displacements and forces if needed
   magfs = len3(gm->fs);
-  if (magfs > Fscrit) {
+  bool fric_on = magfs > Fscrit;
+  gm->dq_friction_hold = 0.0;
+  double damp_scale = 1.0;
+  if (fric_on) {
     shrmag = len3(history);
     if (shrmag != 0.0) {
       magfs_inv = 1.0 / magfs;
-      scale3(Fscrit * magfs_inv, gm->fs, history);
-      scale3(damp, gm->vtr, temp_array);
-      add3(history, temp_array, history);
-      scale3(-1.0 / k, history);
+      damp_scale = Fscrit * magfs_inv;
+      scale3(damp_scale, history);
       scale3(Fscrit * magfs_inv, gm->fs);
     } else {
       zero3(gm->fs);
+      damp_scale = 0.0;
     }
   }
 
   scale3(-k, history, F_tang_elas);
+
+  double tangential_step[3];
+  scale3(gm->dt, vtr2, tangential_step);
+
+  double dq_friction = 0.0;
   add3(F_tang_elas, F_tang_elas_prev, temp_array);
   scale3(0.5, temp_array, temp_array);
 
-  scale3(gm->dt, vtr2, slip);
+  copy3(tangential_step, slip);
   sub3(slip, history, slip);
   add3(slip, history_prev, slip);
 
-  gm->dq_friction_hold = fabs(dot3(slip, temp_array));
+  if (fric_on) dq_friction = MAX(0.0, -dot3(slip, temp_array));
+  gm->dq_friction_hold = dq_friction;
+  gm->dq_damp_hold = damp_scale * damp * dot3(vtr2, vtr2) * gm->dt;
 
   gm->StrainEnergyTang = 0.5*dot3(F_tang_elas, F_tang_elas)/k;
 
@@ -358,6 +374,14 @@ double GranSubModTangentialLinearHistory::calculate_heat()
   }
 
   return dq_damp + dq_friction;
+}
+
+/* ---------------------------------------------------------------------- */
+
+double GranSubModTangentialLinearHistory::elastic_potential()
+{
+  double *history = &gm->history[history_index];
+  return 0.5 * k * dot3(history, history);
 }
 
 /* ----------------------------------------------------------------------
@@ -615,16 +639,11 @@ void GranSubModTangentialMindlin::calculate_forces()
     shrmag = len3(history);
     if (shrmag != 0.0) {
       magfs_inv = 1.0 / magfs;
-      scale3(Fscrit * magfs_inv, gm->fs, history);
-      scale3(damp, gm->vtr, temp_array);
-
-      Ftangdamp = damp * len3(gm->vtr);
-      
-      add3(history, temp_array, history);
-      if (!mindlin_force) scale3(-1.0 / k_scaled, history);
+      const double clip_scale = Fscrit * magfs_inv;
+      scale3(clip_scale, history);
       scale3(Fscrit * magfs_inv, gm->fs);
-
       scale3(Fscrit * magfs_inv, Ftangelasvec);
+      Ftangdamp *= clip_scale;
 
     } else {
       zero3(gm->fs);

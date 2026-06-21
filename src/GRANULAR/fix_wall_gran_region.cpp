@@ -19,6 +19,7 @@
 
 #include "atom.h"
 #include "granular_model.h"
+#include "gran_sub_mod_tangential.h"
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
@@ -165,6 +166,7 @@ void FixWallGranRegion::post_force(int /*vflag*/)
   double *temperature, *heatflow;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
+  wallstrain = 0.0;
 
   // set current motion attributes of region
   // set_velocity() also updates prev to current step
@@ -235,14 +237,25 @@ void FixWallGranRegion::post_force(int /*vflag*/)
       model->i = i;
       model->j = ic;
 
+      if (use_history) model->history = history_many[i][c2r[ic]];
       if (model->beyond_contact) model->touch = (history_many[i][c2r[ic]][0] != 0.0);
 
       touchflag = model->check_contact();
 
       if (!touchflag) {
-        if (use_history)
+        if (use_history) {
+          const double lost_energy =
+              model->heat_tang_fric * model->tangential_model->elastic_potential();
+          if (lost_energy != 0.0) {
+            if (heat_flag) heatflow[i] += lost_energy / update->dt;
+            if (peratom_flag) {
+              array_atom[i][10] = lost_energy;
+              if (size_peratom_cols > 13) array_atom[i][13] = lost_energy;
+            }
+          }
           for (m = 0; m < size_history; m++)
             history_many[i][c2r[ic]][m] = 0.0;
+        }
         continue;
       }
 
@@ -263,10 +276,10 @@ void FixWallGranRegion::post_force(int /*vflag*/)
       model->vi = v[i];
       model->omegai = omega[i];
 
-      if (use_history) model->history = history_many[i][c2r[ic]];
       if (heat_flag) model->Ti = temperature[i];
 
       model->calculate_forces();
+      wallstrain += model->StrainEnergyNorm + model->StrainEnergyTang;
 
       forces = model->forces;
       torquesi = model->torquesi;
@@ -276,7 +289,7 @@ void FixWallGranRegion::post_force(int /*vflag*/)
 
       add3(torque[i], torquesi, torque[i]);
       if (heat_flag)
-        heatflow[i] += model->dq_conduct + 0.5 * model->dq_dissipate;
+        heatflow[i] += model->dq_conduct + model->dq_dissipate / update->dt;
 
       // store contact info
       if (peratom_flag) {
@@ -288,9 +301,12 @@ void FixWallGranRegion::post_force(int /*vflag*/)
         array_atom[i][5] = x[i][1] - model->dx[1];
         array_atom[i][6] = x[i][2] - model->dx[2];
         array_atom[i][7] = radius[i];
+        array_atom[i][8] = model->StrainEnergyNorm;
+        array_atom[i][9] = model->StrainEnergyTang;
+        array_atom[i][10] = model->dq_dissipate;
 
         for (n = 0; n < model->nsvector; n++)
-          array_atom[i][8 + n] = model->svector[n];
+          array_atom[i][11 + n] = model->svector[n];
       }
     }
   }

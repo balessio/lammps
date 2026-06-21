@@ -59,11 +59,11 @@ void ComputeDissipationrateAtom::init()
   if (force->pair == nullptr)
     error->all(FLERR, "Compute dissipationrate/atom requires a pair style be defined");
 
+  if (force->pair->single_extra < 15)
+    error->all(FLERR, "Compute dissipationrate/atom requires pair style granular with dissipative_heat");
+
   if (modify->get_compute_by_style("dissipationrate/atom").size() > 1 && comm->me == 0)
     error->warning(FLERR, "More than one compute dissipationrate/atom");
-
-  //if (!force->pair->dissipative_heat)
-    //error->all(FLERR, "Compute dissipationrate/atom requires pair style with dissipative_heat.");
 
   // need an occasional neighbor list
 
@@ -83,7 +83,7 @@ void ComputeDissipationrateAtom::compute_peratom()
 {
   int i, j, ii, jj, inum, jnum, itype, jtype;
   double xtmp, ytmp, ztmp, delx, dely, delz, rsq;
-  double radi, radsum, radsumsq, fpair;
+  double radi, fpair;
   int *ilist, *jlist, *numneigh, **firstneigh;
   int *type = atom->type;
 
@@ -126,9 +126,6 @@ void ComputeDissipationrateAtom::compute_peratom()
   for (ii = 0; ii < inum; ii++) {
     i = ilist[ii];
 
-    // Only proceed if i is either part of the compute group or will contribute to dissipation
-    if (!(mask[i] & groupbit)) continue;
-
     xtmp = x[i][0];
     ytmp = x[i][1];
     ztmp = x[i][2];
@@ -151,10 +148,8 @@ void ComputeDissipationrateAtom::compute_peratom()
       dely = ytmp - x[j][1];
       delz = ztmp - x[j][2];
       rsq = delx * delx + dely * dely + delz * delz;
-      radsum = radi + radius[j];
-      radsumsq = radsum * radsum;
-      if (rsq > radsumsq) continue;
-
+      // Do not pre-filter by radsum here. Granular history contacts can expose
+      // deleted-contact heat through pair->single() just after separation.
       pair->single(i, j, itype, jtype, rsq, 1.0, 1.0, fpair);
 
       if (update_i_flag) {
@@ -164,9 +159,9 @@ void ComputeDissipationrateAtom::compute_peratom()
       }
 
       if (update_j_flag) {
-        dissipationrate[j][0] -= 0.5 * force->pair->svector[12] / update->dt;
-        dissipationrate[j][1] -= 0.5 * force->pair->svector[13] / update->dt;
-        dissipationrate[j][2] -= 0.5 * force->pair->svector[14] / update->dt;
+        dissipationrate[j][0] += 0.5 * force->pair->svector[12] / update->dt;
+        dissipationrate[j][1] += 0.5 * force->pair->svector[13] / update->dt;
+        dissipationrate[j][2] += 0.5 * force->pair->svector[14] / update->dt;
       }
     }
   }

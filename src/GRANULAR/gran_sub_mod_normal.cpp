@@ -190,7 +190,7 @@ void GranSubModNormalHertz::coeffs_to_local()
 double GranSubModNormalHertz::calculate_forces()
 {
   double Fn_hold = k * gm->contact_radius * gm->delta;
-  gm->StrainEnergyNorm = 0.5 * pow(Fn_hold, 2) / k / gm->contact_radius;
+  gm->StrainEnergyNorm = 0.4 * Fn_hold * gm->delta;
   return Fn_hold;
 }
 

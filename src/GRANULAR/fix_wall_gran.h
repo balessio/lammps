@@ -37,6 +37,7 @@ class FixWallGran : public Fix {
   void setup(int) override;
   void post_force(int) override;
   void post_force_respa(int, int, int) override;
+  double compute_scalar() override;
 
   double memory_usage() override;
   void grow_arrays(int) override;
@@ -62,6 +63,7 @@ class FixWallGran : public Fix {
   double amplitude, period, omega, vshear;
   double dt;
   double Twall;
+  double wallstrain;
   char *idregion;
 
   int use_history;       // if particle/wall interaction stores history

@@ -1,0 +1,79 @@
+units si
+atom_style sphere
+boundary p p f
+newton off
+comm_modify mode single vel yes
+atom_modify map array sort 0 0
+
+variable gravity equal 9.81
+timestep ${dt}
+
+region box block 0.0 0.030 0.0 0.025 0.0 0.080 units box
+create_box 1 box
+
+variable grainDensity equal 1000
+variable lattice_size equal 0.0060
+lattice sc ${lattice_size}
+region grains block 0.0030 0.0270 0.0030 0.0240 0.0300 0.0490 units box
+create_atoms 1 region grains
+variable grainDiameter atom random(0.0045,0.0055,19473)
+set group all diameter v_grainDiameter density ${grainDensity}
+displace_atoms all random 0.00010 0.00010 0.00015 29171 units box
+variable vx0 atom random(-0.002,0.002,39277)
+variable vy0 atom random(-0.002,0.002,39278)
+variable vz0 atom random(-0.001,0.001,39279)
+set group all vx v_vx0
+set group all vy v_vy0
+set group all vz v_vz0
+
+neighbor 0.003 bin
+neigh_modify delay 0 every 1 check yes
+
+pair_style granular
+include ${pair_file}
+include ${wall_file}
+fix_modify wall energy yes
+
+fix grav all gravity ${gravity} vector 0.0 0.0 -1.0
+fix integ all nve/sphere
+
+fix allowT all property/atom temperature heatflow ghost yes
+fix calcT all heat/flow constant 740.0
+compute storeT all property/atom temperature
+compute meanT all reduce ave c_storeT
+
+compute KinEng all ke
+compute RotKinEng_atom all erotate/sphere/atom
+compute RotKinEng all reduce sum c_RotKinEng_atom
+compute PotEng all pe
+variable GravAtom atom mass*${gravity}*z
+compute GravEng all reduce sum v_GravAtom
+compute pairs all pair/local p13 p14 p15
+compute AccumDiss all reduce sum c_pairs[*] inputs local
+compute DissAtom all dissipationrate/atom
+compute DissAtomSum all reduce sum c_DissAtom[*]
+compute WallNorm all reduce sum f_wall[9]
+compute WallTang all reduce sum f_wall[10]
+compute WallDiss all reduce sum f_wall[11]
+compute WallDissParts all reduce sum f_wall[12] f_wall[13] f_wall[14]
+compute PotEngAtom all pe/atom
+
+variable TotalMech equal c_KinEng+c_RotKinEng+c_PotEng+c_GravEng
+
+thermo_style custom step atoms c_KinEng c_RotKinEng c_PotEng c_GravEng c_WallNorm c_WallTang c_WallDiss v_TotalMech
+thermo ${dumpEvery}
+
+fix energy_out all ave/time ${avewindow} 1 ${avewindow} &
+  c_KinEng c_RotKinEng c_PotEng c_GravEng c_WallNorm c_WallTang c_meanT &
+  file ${outdir}/energy.dat
+
+fix diss_out all ave/time 1 ${avewindow} ${avewindow} &
+  c_AccumDiss[1] c_AccumDiss[2] c_AccumDiss[3] c_WallDiss &
+  c_DissAtomSum[1] c_DissAtomSum[2] c_DissAtomSum[3] &
+  c_WallDissParts[1] c_WallDissParts[2] c_WallDissParts[3] &
+  file ${outdir}/dissipation.dat
+
+if "${dump} > 0" then &
+  "dump dump_all all custom ${dumpEvery} ${outdir}/dumpfiles/all_*.lammpstrj id type radius x y z vx vy vz omegax omegay omegaz c_PotEngAtom c_DissAtom[1] c_DissAtom[2] c_DissAtom[3] c_storeT"
+
+run ${runSteps}

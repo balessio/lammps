@@ -22,6 +22,7 @@
 #include "atom.h"
 #include "granular_model.h"
 #include "gran_sub_mod.h"
+#include "gran_sub_mod_tangential.h"
 #include "domain.h"
 #include "error.h"
 #include "input.h"
@@ -58,6 +59,11 @@ FixWallGran::FixWallGran(LAMMPS *lmp, int narg, char **arg) :
 {
   if (narg < 4) utils::missing_cmd_args(FLERR,"fix wall/gran", error);
 
+  scalar_flag = 1;
+  global_freq = 1;
+  extscalar = 1;
+  energy_global_flag = 1;
+
   if (!atom->omega_flag) error->all(FLERR,"Fix wall/gran requires atom attribute omega");
   if (!atom->radius_flag) error->all(FLERR,"Fix wall/gran requires atom attribute radius");
 
@@ -69,6 +75,7 @@ FixWallGran::FixWallGran(LAMMPS *lmp, int narg, char **arg) :
   model->contact_type = WALL;
 
   heat_flag = 0;
+  wallstrain = 0.0;
   int classic_flag = 1;
   if (strcmp(arg[3],"granular") == 0)  classic_flag = 0;
 
@@ -211,7 +218,7 @@ FixWallGran::FixWallGran(LAMMPS *lmp, int narg, char **arg) :
       iarg += 3;
     } else if (strcmp(arg[iarg],"contacts") == 0) {
       peratom_flag = 1;
-      size_peratom_cols = 8 + model->nsvector;
+      size_peratom_cols = 11 + model->nsvector;
       peratom_freq = 1;
       iarg += 1;
     } else if (strcmp(arg[iarg],"temperature") == 0) {
@@ -447,6 +454,7 @@ void FixWallGran::post_force(int /*vflag*/)
   int nlocal = atom->nlocal;
 
   rwall = 0.0;
+  wallstrain = 0.0;
 
   model->calculate_svector = 0;
   if (peratom_flag) {
@@ -511,14 +519,25 @@ void FixWallGran::post_force(int /*vflag*/)
     model->dx[2] = dz;
     model->radi = radius[i];
     model->radj = rwall;
+    if (use_history) model->history = history_one[i];
     if (model->beyond_contact) model->touch = (history_one[i][0] != 0.0);
 
     touchflag = model->check_contact();
 
     if (!touchflag) {
-      if (use_history)
+      if (use_history) {
+        const double lost_energy =
+            model->heat_tang_fric * model->tangential_model->elastic_potential();
+        if (lost_energy != 0.0) {
+          if (heat_flag) heatflow[i] += lost_energy / update->dt;
+          if (peratom_flag) {
+            array_atom[i][10] = lost_energy;
+            if (size_peratom_cols > 13) array_atom[i][13] = lost_energy;
+          }
+        }
         for (j = 0; j < size_history; j++)
           history_one[i][j] = 0.0;
+      }
       continue;
     }
 
@@ -535,10 +554,10 @@ void FixWallGran::post_force(int /*vflag*/)
     model->meff = meff;
     model->vi = v[i];
     model->omegai = omega[i];
-    if (use_history) model->history = history_one[i];
     if (heat_flag) model->Ti = temperature[i];
 
     model->calculate_forces();
+    wallstrain += model->StrainEnergyNorm + model->StrainEnergyTang;
 
     forces = model->forces;
     torquesi = model->torquesi;
@@ -548,7 +567,7 @@ void FixWallGran::post_force(int /*vflag*/)
 
     add3(torque[i], torquesi, torque[i]);
     if (heat_flag)
-      heatflow[i] += model->dq_conduct + 0.5 * model->dq_dissipate;
+      heatflow[i] += model->dq_conduct + model->dq_dissipate / update->dt;
 
     // store contact info
     if (peratom_flag) {
@@ -560,9 +579,12 @@ void FixWallGran::post_force(int /*vflag*/)
       array_atom[i][5] = x[i][1] - dy;
       array_atom[i][6] = x[i][2] - dz;
       array_atom[i][7] = radius[i];
+      array_atom[i][8] = model->StrainEnergyNorm;
+      array_atom[i][9] = model->StrainEnergyTang;
+      array_atom[i][10] = model->dq_dissipate;
 
       for (n = 0; n < model->nsvector; n++)
-        array_atom[i][8 + n] = model->svector[n];
+        array_atom[i][11 + n] = model->svector[n];
     }
   }
 }
@@ -577,6 +599,15 @@ void FixWallGran::clear_stored_contacts()
       array_atom[i][m] = 0.0;
     }
   }
+}
+
+/* ---------------------------------------------------------------------- */
+
+double FixWallGran::compute_scalar()
+{
+  double wallstrain_all;
+  MPI_Allreduce(&wallstrain,&wallstrain_all,1,MPI_DOUBLE,MPI_SUM,world);
+  return wallstrain_all;
 }
 
 /* ---------------------------------------------------------------------- */

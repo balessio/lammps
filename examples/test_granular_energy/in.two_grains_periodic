@@ -1,0 +1,60 @@
+units si
+atom_style sphere
+boundary p p p
+newton off
+comm_modify mode single vel yes
+atom_modify map array sort 0 0
+
+timestep ${dt}
+
+region box block 0.0 0.020 0.0 0.020 0.0 0.020 units box
+create_box 1 box
+create_atoms 1 single 0.0073 0.0095 0.0100 units box
+create_atoms 1 single 0.0127 0.0105 0.0100 units box
+set group all diameter 0.005 density 1000
+
+neighbor 0.003 nsq
+neigh_modify delay 0 every 1 check no
+
+pair_style granular
+include ${pair_file}
+
+velocity all set 0.0 0.0 0.0 units box
+set atom 1 vx 0.05
+set atom 2 vx -0.05
+set atom 1 vy 0.005
+set atom 2 vy -0.005
+set atom 1 omega 0.0 0.0 20.0
+set atom 2 omega 0.0 0.0 -20.0
+
+fix integ all nve/sphere
+
+compute KinEng all ke
+compute RotKinEng_atom all erotate/sphere/atom
+compute RotKinEng all reduce sum c_RotKinEng_atom
+compute PotEng all pe
+compute pairs all pair/local p13 p14 p15
+compute AccumDiss all reduce sum c_pairs[*] inputs local
+compute DissAtom all dissipationrate/atom
+compute DissAtomSum all reduce sum c_DissAtom[*]
+compute PotEngAtom all pe/atom
+
+variable zero equal 0.0
+variable TotalMech equal c_KinEng+c_RotKinEng+c_PotEng
+
+thermo_style custom step c_KinEng c_RotKinEng c_PotEng c_AccumDiss[1] c_AccumDiss[2] c_AccumDiss[3] v_TotalMech
+thermo ${dumpEvery}
+
+fix energy_out all ave/time ${avewindow} 1 ${avewindow} &
+  c_KinEng c_RotKinEng c_PotEng v_zero v_zero v_zero v_zero &
+  file ${outdir}/energy.dat
+
+fix diss_out all ave/time 1 ${avewindow} ${avewindow} &
+  c_AccumDiss[1] c_AccumDiss[2] c_AccumDiss[3] v_zero &
+  c_DissAtomSum[1] c_DissAtomSum[2] c_DissAtomSum[3] &
+  file ${outdir}/dissipation.dat
+
+if "${dump} > 0" then &
+  "dump dump_all all custom ${dumpEvery} ${outdir}/dumpfiles/all_*.lammpstrj id type radius x y z vx vy vz omegax omegay omegaz c_PotEngAtom c_DissAtom[1] c_DissAtom[2] c_DissAtom[3]"
+
+run ${runSteps}
